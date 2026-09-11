@@ -34,6 +34,34 @@ router.post('/', authLimiter, async (req, res) => {
   }
 })
 
+/* ---------- EMAIL THE SAVED GROUP CODE + RECOVERY CODE (fired when the
+   admin taps "I've saved these — Continue" right after creating a group).
+   The plain recoveryCode only ever exists for this one moment — only its
+   hash is stored — so the client (which just received it) has to pass it
+   back in here to be emailed; it can't be re-fetched later. ---------- */
+router.post('/:id/email-setup-info', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const chitty = await Chitty.findById(req.params.id)
+    if (!chitty) return res.status(404).json({ message: 'Chitty not found.' })
+    const adminEmail = (chitty.adminEmail || '').trim()
+    if (!adminEmail) return res.json({ emailed: false })
+
+    const { recoveryCode } = req.body
+    await sendEmail(
+      adminEmail,
+      `Your "${chitty.name}" group & recovery codes`,
+      `Group code (share with members): ${chitty.code}\n` +
+      `Recovery code (keep private — only you use this): ${recoveryCode || '(not provided)'}\n\n` +
+      `Keep this email somewhere safe. You'll need the recovery code only if you ever forget your admin passcode.`
+    )
+    res.json({ emailed: true, maskedEmail: maskEmail(adminEmail) })
+  } catch (e) {
+    // Don't fail the whole flow over a flaky email send — the admin still has
+    // the codes on screen and can copy them manually.
+    res.json({ emailed: false })
+  }
+})
+
 /* ---------- ADMIN LOGIN ---------- */
 router.post('/login', authLimiter, async (req, res) => {
   try {
